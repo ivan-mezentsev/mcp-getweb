@@ -132,4 +132,4 @@ Note: Requires `JINA_API_KEY` to be set.
 
 ## Support
 
-If you encounter any issues or have questions, please [open an issue](https://github.com/mcp-getweb-team/mcp-getweb/issues) on GitHub.
+If you encounter any issues or have questions, please [open an issue](https://github.com/ivan-mezentsev/mcp-getweb/issues) on GitHub.
