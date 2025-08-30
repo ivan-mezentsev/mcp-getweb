@@ -1,0 +1,114 @@
+name: build-matrix
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.runner }} / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-14
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-${{ matrix.runner }}-${{ matrix.target }}-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install musl tools (Linux musl targets)
+        if: ${{ contains(matrix.target, 'unknown-linux-musl') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools pkg-config
+
+      - name: Build (release)
+        run: cargo build --target ${{ matrix.target }} --release --bin mcp-getweb
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [[ "${{ matrix.runner }}" == windows* ]]; then
+            cp target/${{ matrix.target }}/release/mcp-getweb.exe "dist/mcp-getweb-${{ matrix.target }}.exe"
+          else
+            cp target/${{ matrix.target }}/release/mcp-getweb "dist/mcp-getweb-${{ matrix.target }}"
+          fi
+
+      - name: Install compression tools (Linux)
+        if: ${{ startsWith(matrix.runner, 'ubuntu') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+
+      - name: Compress artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist"
+          for f in "$dest"/*; do
+            base="$(basename "$f")"
+            # Skip existing archives (safety)
+            if [[ "$base" == *.tar.gz || "$base" == *.zip || "$base" == *.zst ]]; then
+              continue
+            fi
+
+            # Create tar.gz per-binary (portable)
+            tar -C "$dest" -czf "$dest/${base}.tar.gz" "$base"
+
+            # Create .zip for Windows binaries
+            if [[ "${{ matrix.runner }}" == windows* ]]; then
+              (cd "$dest" && 7z a "${base}.zip" "$base")
+            fi
+
+            # Also create .zst and remove original uncompressed binary
+            zstd -T0 -19 --rm "$dest/$base"
+          done
+
+      - name: Upload to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          file_glob=(dist/*)
+          # Create release if missing, otherwise upload assets
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag"
+          fi
+          gh release upload "$tag" "${file_glob[@]}" --clobber

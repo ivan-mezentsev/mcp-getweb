@@ -1,0 +1,10 @@
+[profile.release]
+lto = true
+strip = true
+panic = "abort"
+opt-level = 3
+codegen-units = 1
+
+#[target.x86_64-unknown-linux-musl]
+#linker = "x86_64-unknown-linux-musl-gcc"
+#rustflags = ["-C", "target-feature=+crt-static"]

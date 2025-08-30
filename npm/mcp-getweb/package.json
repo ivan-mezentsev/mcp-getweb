@@ -1,0 +1,35 @@
+{
+  "name": "mcp-getweb",
+  "version": "0.1.0",
+  "description": "Searching: Google (API keys), Felo AI, DuckDuckGo; convert fetched pages to Markdown (LLM‑ready) and fetch ready docs from Jina API.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "getweb",
+    "mcp-getweb",
+    "AI",
+    "fetch"
+  ],
+  "author": "Ivan Mezentsev",
+  "homepage": "https://github.com/ivan-mezentsev/mcp-getweb",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivan-mezentsev/mcp-getweb.git"
+  },
+  "bin": {
+    "mcp-getweb": "bin/mcp-getweb.js"
+  },
+  "bugs": {
+    "url": "https://github.com/ivan-mezentsev/mcp-getweb/issues"
+  },
+  "files": [
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
