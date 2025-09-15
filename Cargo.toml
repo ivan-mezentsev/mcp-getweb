@@ -1,6 +1,6 @@
 [package]
 name = "mcp-getweb"
-version = "1.2.2"
+version = "1.3.0"
 edition = "2021"
 description = "A Model Context Protocol server for web search using DuckDuckGo, Google Search, and Felo AI"
 license = "MIT"
