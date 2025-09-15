@@ -10,6 +10,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tracing::debug;
 use url::Url;
+use tokio::sync::Mutex as AsyncMutex; // Async mutex for rate limiting queue
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Constants
 const RESULTS_PER_PAGE: u32 = 10;
@@ -68,6 +70,49 @@ static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
         .build()
         .expect("Failed to create HTTP client")
 });
+
+// ---------------------------------------------------------------------------
+// Global DuckDuckGo rate limiting (FIFO queue, min 5s between outbound calls)
+// ---------------------------------------------------------------------------
+// Even with multiple concurrent search tool executions we must
+// ensure at least 5 seconds between actual HTTP requests to DuckDuckGo.
+// Implemented this as a lazily-initialized global async mutex holding the
+// timestamp of the last performed request. Tasks acquire the mutex in the
+// order they reach .await (Tokio's mutex wake-up is fair enough for FIFO
+// semantics here) and, if needed, sleep while holding the lock to preserve
+// ordering and guarantee spacing (not releasing the lock before sleep avoids
+// a race that could allow multiple sleepers to wake and fire simultaneously).
+// Cache hits bypass this limiter entirely since they do not perform a network
+// request.
+const DDG_BASE_INTERVAL: Duration = Duration::from_secs(5);
+static LAST_DDG_REQUEST: Lazy<AsyncMutex<Option<Instant>>> = Lazy::new(|| AsyncMutex::new(None));
+static DDG_WAITING_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+async fn wait_for_duckduckgo_rate_limit() {
+    // Register this task in the queue and capture its position (1-based)
+    let position = DDG_WAITING_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // Compute required minimal interval based on queue position:
+    // 1..=3 => 5s, 4 =>10s, 5 =>15s, 6 =>20s, etc.
+    let required_interval = if position <= 3 {
+        DDG_BASE_INTERVAL
+    } else {
+        // (position - 2) * 5s yields: 4->10s, 5->15s, 6->20s ...
+        DDG_BASE_INTERVAL * (position as u32 - 2)
+    };
+
+    let mut last_guard = LAST_DDG_REQUEST.lock().await;
+    if let Some(prev) = *last_guard {
+        let elapsed = prev.elapsed();
+        if elapsed < required_interval {
+            tokio::time::sleep(required_interval - elapsed).await;
+        }
+    }
+    *last_guard = Some(Instant::now());
+
+    // Done; remove from waiting count
+    DDG_WAITING_COUNT.fetch_sub(1, Ordering::SeqCst);
+}
 
 /// Get a random user agent from the list
 fn get_random_user_agent() -> &'static str {
@@ -190,6 +235,9 @@ pub async fn duckduckgo_search(
     );
 
     debug!("Fetching search results from: {}", url);
+
+    // Enforce global DuckDuckGo rate limit (only on cache miss path)
+    wait_for_duckduckgo_rate_limit().await;
 
     let response = HTTP_CLIENT
         .get(&url)
