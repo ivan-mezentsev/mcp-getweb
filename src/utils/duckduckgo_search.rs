@@ -194,6 +194,13 @@ pub async fn duckduckgo_search(
     let response = HTTP_CLIENT
         .get(&url)
         .header("User-Agent", user_agent)
+        // Added browser-like headers to reduce rate limiting / bot detection
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Accept-Encoding", "gzip, deflate, br")
         .send()
         .await?;
 
