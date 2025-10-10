@@ -13,7 +13,9 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::OnceLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
+
+use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
 
@@ -744,20 +746,53 @@ impl UrlFetchTool {
                     .unwrap_or("Unknown error")
             ));
         }
-
-        let content_type_header = response
+        // Capture header and status for later use
+        let status_code = response.status().as_u16();
+        let content_type_opt: Option<String> = response
             .headers()
             .get("content-type")
             .and_then(|ct| ct.to_str().ok())
-            .unwrap_or("text/html")
-            .to_string();
+            .map(|s| s.to_string());
 
+        // Read the body once (simple strategy). We will peek into the first 512 bytes.
         let body = response
             .bytes()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
 
-        let content_type = match content_type_header.as_str() {
+        // Binary guard before mapping ContentType
+        let head_len = std::cmp::min(512, body.len());
+        let head = &body[..head_len];
+        match detect_binary(content_type_opt.as_deref(), head) {
+            BinaryDetection::Binary { content_type } => {
+                // Build standardized error payload and wrap with recognizable prefix for pass-through
+                let ct_eff = content_type.clone().or_else(|| content_type_opt.clone());
+                warn!(
+                    "Refusing binary content (policy=binary-guard) url={} content_type={:?} size_bytes={}",
+                    url,
+                    ct_eff,
+                    body.len()
+                );
+                let details = serde_json::json!({
+                    "url": url,
+                    "httpStatus": status_code,
+                    "contentType": ct_eff,
+                    "size": body.len(),
+                    "hint": "Binary content is not supported by this tool. Provide a text-based URL or use a tool that handles binary files."
+                });
+                let payload = build_error_payload(
+                    "ERR_FETCH_UNSUPPORTED_BINARY",
+                    "Fetch cannot be performed for this type of content",
+                    details,
+                );
+                return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
+            }
+            BinaryDetection::Text => {}
+        }
+
+        // After guard, map ContentType for processing
+        let content_type_header = content_type_opt.as_deref().unwrap_or("text/html");
+        let content_type = match content_type_header {
             ct if ct.contains("text/html") => ContentType::Html,
             ct if ct.contains("text/plain") => ContentType::Plaintext,
             ct if ct.contains("application/json") => ContentType::Json,
@@ -826,8 +861,18 @@ impl UrlFetchTool {
                 }
             }
             Err(e) => {
-                error!("Error fetching URL {}: {}", params.url, e);
-                CallToolResult::error(format!("Error fetching URL: {}", e))
+                let msg = e.to_string();
+                if let Some(rest) = msg.strip_prefix("__TOOL_ERROR__") {
+                    // Pass through standardized tool error payload
+                    warn!(
+                        "Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}",
+                        params.url
+                    );
+                    CallToolResult::error(rest.to_string())
+                } else {
+                    error!("Error fetching URL {}: {}", params.url, msg);
+                    CallToolResult::error(format!("Error fetching URL: {}", msg))
+                }
             }
         }
     }

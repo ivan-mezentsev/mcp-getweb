@@ -4,6 +4,7 @@ use serde_json::json;
 use tracing::{error, info};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
+use crate::utils::content_guard::safe_truncate_utf8;
 use crate::utils::duckduckgo_search::{fetch_url_content, ContentExtractionOptions};
 
 pub static FETCH_URL_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
@@ -136,9 +137,10 @@ impl FetchUrlTool {
             Ok(content) => {
                 // Truncate content if it's too long
                 let truncated_content = if content.len() > params.max_length {
-                    format!(
-                        "{}... [Content truncated due to length]",
-                        &content[..params.max_length]
+                    safe_truncate_utf8(
+                        &content,
+                        params.max_length,
+                        "... [Content truncated due to length]",
                     )
                 } else {
                     content.clone()
@@ -163,7 +165,8 @@ impl FetchUrlTool {
             }
             Err(e) => {
                 error!("Error fetching URL {}: {}", params.url, e);
-                CallToolResult::error(format!("Error fetching URL: {}", e))
+                // Propagate the error string as-is without altering the format
+                CallToolResult::error(e.to_string())
             }
         }
     }
