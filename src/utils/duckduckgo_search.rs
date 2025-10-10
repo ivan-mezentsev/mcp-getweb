@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex as AsyncMutex; // Async mutex for rate limiting queue
-use tracing::debug;
+use tracing::{debug, info};
 use url::Url;
 
 // Constants
@@ -446,22 +446,65 @@ pub async fn fetch_url_content(url: &str, options: &ContentExtractionOptions) ->
             response.status()
         ));
     }
+    // Import content guard helpers
+    use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};
 
-    // Check content type
-    let content_type = response
+    // Check content type from headers
+    let content_type_header = response
         .headers()
         .get("content-type")
         .and_then(|ct| ct.to_str().ok())
-        .unwrap_or("");
+        .map(|s| s.to_string());
 
-    if !content_type.contains("text/html") {
-        // For non-HTML content, return as is
-        let text = response.text().await?;
-        return Ok(text);
+    // Preserve actual HTTP status for details
+    let status_code = response.status().as_u16();
+
+    // Read body bytes (we'll safely decode later if textual)
+    let body_bytes = response.bytes().await?;
+    let size = body_bytes.len();
+
+    // Peek first 512 bytes for magic-signature detection
+    let head_len = std::cmp::min(512, body_bytes.len());
+    let head = &body_bytes[..head_len];
+
+    // Binary guard using headers + magic bytes
+    let detection = detect_binary(content_type_header.as_deref(), head);
+    if let BinaryDetection::Binary { content_type } = detection {
+        let message = "Fetch cannot be performed for this type of content";
+        let ct_effective = content_type
+            .clone()
+            .or_else(|| content_type_header.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let details = serde_json::json!({
+            "url": url,
+            "httpStatus": status_code,
+            "contentType": ct_effective,
+            "size": size,
+        });
+        let payload = build_error_payload("ERR_FETCH_UNSUPPORTED_BINARY", message, details);
+        info!(
+            url = url,
+            ct = %ct_effective,
+            size = size,
+            "Binary content detected; refusing fetch"
+        );
+        return Err(anyhow!(payload));
     }
 
-    let html = response.text().await?;
-    let document = Html::parse_document(&html);
+    // Safe UTF-8 lossy decode for textual content
+    let decoded = String::from_utf8_lossy(&body_bytes).to_string();
+
+    // If not HTML content-type, return decoded text as is
+    let is_html = content_type_header
+        .as_deref()
+        .map(|ct| ct.to_ascii_lowercase().contains("text/html"))
+        .unwrap_or(false);
+    if !is_html {
+        return Ok(decoded);
+    }
+
+    // HTML path: parse document and extract text according to options
+    let document = Html::parse_document(&decoded);
 
     // Remove unwanted elements
     let mut unwanted_selectors = vec!["script", "style", "noscript", "iframe", "svg"];
