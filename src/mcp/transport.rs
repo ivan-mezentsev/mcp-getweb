@@ -5,7 +5,7 @@ use tokio::io::BufReader;
 use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
 use tracing::{debug, error};
 
-use super::types::{McpMessage, McpRequest, McpResponse, McpNotification};
+use super::types::{McpMessage, McpNotification, McpRequest, McpResponse};
 
 pub struct StdioTransport {
     reader: FramedRead<BufReader<tokio::io::Stdin>, LinesCodec>,
@@ -45,7 +45,9 @@ impl StdioTransport {
                             } else {
                                 // This is a notification
                                 match serde_json::from_value::<McpNotification>(value) {
-                                    Ok(notification) => Ok(Some(McpMessage::Notification(notification))),
+                                    Ok(notification) => {
+                                        Ok(Some(McpMessage::Notification(notification)))
+                                    }
                                     Err(e) => {
                                         error!("Failed to parse notification: {}", e);
                                         Err(anyhow::anyhow!("Invalid JSON-RPC notification: {}", e))

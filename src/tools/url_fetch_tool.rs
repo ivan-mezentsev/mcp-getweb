@@ -1,19 +1,19 @@
-use once_cell::sync::Lazy;
-use serde::Deserialize;
-use serde_json::json;
-use std::collections::VecDeque;
-use std::rc::Rc;
-use std::cell::RefCell;
-use tracing::{error, info};
-use regex::Regex;
 use html5ever::driver::ParseOpts;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use html5ever::tree_builder::TreeBuilderOpts;
-use markup5ever_rcdom::{RcDom, Handle, NodeData};
 use html5ever::Attribute;
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde::Deserialize;
+use serde_json::json;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::OnceLock;
+use tracing::{error, info};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
 
@@ -181,7 +181,11 @@ impl MarkdownWriter {
         self.push_str("\n\n");
     }
 
-    pub fn run(mut self, root_node: &Handle, handlers: &mut [TagHandler]) -> anyhow::Result<String> {
+    pub fn run(
+        mut self,
+        root_node: &Handle,
+        handlers: &mut [TagHandler],
+    ) -> anyhow::Result<String> {
         self.visit_node(root_node, handlers)?;
         Ok(Self::prettify_markdown(self.markdown))
     }
@@ -327,9 +331,20 @@ impl HandleTag for WebpageChromeRemover {
 
         // Skip elements with ad-related classes
         if tag.has_any_classes(&[
-            "ad", "ads", "advertisement", "banner", "popup", "modal",
-            "cookie", "newsletter", "sidebar", "widget", "promo",
-            "sponsored", "affiliate", "tracking"
+            "ad",
+            "ads",
+            "advertisement",
+            "banner",
+            "popup",
+            "modal",
+            "cookie",
+            "newsletter",
+            "sidebar",
+            "widget",
+            "promo",
+            "sponsored",
+            "affiliate",
+            "tracking",
         ]) {
             return StartTagOutcome::Skip;
         }
@@ -337,8 +352,11 @@ impl HandleTag for WebpageChromeRemover {
         // Also check individual classes for more specific filtering
         let element_classes = tag.classes();
         for class in &element_classes {
-            if class.contains("ad") || class.contains("banner") 
-                || class.contains("popup") || class.contains("promo") {
+            if class.contains("ad")
+                || class.contains("banner")
+                || class.contains("popup")
+                || class.contains("promo")
+            {
                 return StartTagOutcome::Skip;
             }
         }
@@ -351,9 +369,13 @@ impl HandleTag for WebpageChromeRemover {
         // Skip elements with ad-related IDs
         if let Some(id) = tag.attr("id") {
             let id_lower = id.to_lowercase();
-            if id_lower.contains("ad") || id_lower.contains("banner") 
-                || id_lower.contains("popup") || id_lower.contains("cookie")
-                || id_lower.contains("newsletter") || id_lower.contains("sidebar") {
+            if id_lower.contains("ad")
+                || id_lower.contains("banner")
+                || id_lower.contains("popup")
+                || id_lower.contains("cookie")
+                || id_lower.contains("newsletter")
+                || id_lower.contains("sidebar")
+            {
                 return StartTagOutcome::Skip;
             }
         }
@@ -661,7 +683,10 @@ impl HandleTag for CodeHandler {
 }
 
 // HTML to Markdown conversion
-pub fn convert_html_to_markdown(html: &[u8], handlers: &mut [TagHandler]) -> anyhow::Result<String> {
+pub fn convert_html_to_markdown(
+    html: &[u8],
+    handlers: &mut [TagHandler],
+) -> anyhow::Result<String> {
     let dom = parse_html(html)?;
 
     let markdown_writer = MarkdownWriter::new();
@@ -703,20 +728,33 @@ impl UrlFetchTool {
         };
 
         let client = reqwest::Client::new();
-        let response = client.get(&url).send().await
+        let response = client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch URL: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error {}: {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown error")));
+            return Err(anyhow::anyhow!(
+                "HTTP error {}: {}",
+                response.status(),
+                response
+                    .status()
+                    .canonical_reason()
+                    .unwrap_or("Unknown error")
+            ));
         }
 
-        let content_type_header = response.headers()
+        let content_type_header = response
+            .headers()
             .get("content-type")
             .and_then(|ct| ct.to_str().ok())
             .unwrap_or("text/html")
             .to_string();
 
-        let body = response.bytes().await
+        let body = response
+            .bytes()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
 
         let content_type = match content_type_header.as_str() {
@@ -742,11 +780,9 @@ impl UrlFetchTool {
 
                 convert_html_to_markdown(&body, &mut handlers)
             }
-            ContentType::Plaintext => {
-                Ok(std::str::from_utf8(&body)
-                    .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
-                    .to_owned())
-            }
+            ContentType::Plaintext => Ok(std::str::from_utf8(&body)
+                .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
+                .to_owned()),
             ContentType::Json => {
                 let json: serde_json::Value = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;

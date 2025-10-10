@@ -6,12 +6,12 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex as AsyncMutex; // Async mutex for rate limiting queue
 use tracing::debug;
 use url::Url;
-use tokio::sync::Mutex as AsyncMutex; // Async mutex for rate limiting queue
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Constants
 const RESULTS_PER_PAGE: u32 = 10;

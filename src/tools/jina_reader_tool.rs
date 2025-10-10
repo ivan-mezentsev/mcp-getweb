@@ -4,9 +4,10 @@ use serde_json::json;
 use tracing::{error, info};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
-use crate::utils::jina_reader::{JinaReaderService, JinaReaderParams as ServiceParams};
+use crate::utils::jina_reader::{JinaReaderParams as ServiceParams, JinaReaderService};
 
-pub static JINA_READER_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+pub static JINA_READER_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| {
+    ToolDefinition {
     name: "jina-reader".to_string(),
     description: "Retrieve LLM-friendly content from a single website URL using Jina r.reader API. Useful when you know the specific source of information.".to_string(),
     input_schema: json!({
@@ -64,6 +65,7 @@ pub static JINA_READER_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| Tool
         read_only_hint: Some(true),
         open_world_hint: Some(true),
     }),
+}
 });
 
 #[derive(Debug, Deserialize)]
@@ -116,7 +118,8 @@ impl JinaReaderTool {
             Some(service) => service,
             None => {
                 return CallToolResult::error(
-                    "Jina Reader API key not configured. Set JINA_API_KEY environment variable.".to_string()
+                    "Jina Reader API key not configured. Set JINA_API_KEY environment variable."
+                        .to_string(),
                 );
             }
         };
@@ -168,12 +171,15 @@ impl JinaReaderTool {
 
                 // Build result with metadata
                 let mut result = format!("# {}", response.title.unwrap_or("Untitled".to_string()));
-                
+
                 if let Some(description) = response.description {
                     result.push_str(&format!("\n\n**Description:** {}\n", description));
                 }
-                
-                result.push_str(&format!("\n**URL:** {}\n\n", response.url.unwrap_or(params.url.clone())));
+
+                result.push_str(&format!(
+                    "\n**URL:** {}\n\n",
+                    response.url.unwrap_or(params.url.clone())
+                ));
                 result.push_str(&truncated_content);
 
                 // Add links summary if requested and available

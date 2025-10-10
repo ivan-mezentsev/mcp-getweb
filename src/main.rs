@@ -31,7 +31,8 @@ fn print_box(lines: &[&str]) {
                 let left_padding = total_padding / 2;
                 let right_padding = total_padding - left_padding;
 
-                eprintln!("║  {}{}{}\x1b[36m║",
+                eprintln!(
+                    "║  {}{}{}\x1b[36m║",
                     " ".repeat(left_padding),
                     line,
                     " ".repeat(right_padding)
@@ -83,7 +84,7 @@ async fn main() {
             - fetch-url: Fetch and extract content from a URL\n\
             - url-metadata: Extract metadata from a URL\n\
             - url-fetch: Fetch web pages and convert them to markdown\n\
-            - felo-search: Search using Felo AI for AI-generated responses"
+            - felo-search: Search using Felo AI for AI-generated responses",
         )
         .arg(
             Arg::new("google-api-key")
@@ -197,7 +198,7 @@ async fn main() {
             "\x1b[0m Model Context Protocol server for web search \x1b[0m",
             "",
             "\x1b[90m https://github.com/ivan-mezentsev/mcp-getweb \x1b[0m",
-            ""
+            "",
         ]);
     }
 
