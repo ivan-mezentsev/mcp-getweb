@@ -863,15 +863,24 @@ impl UrlFetchTool {
             Err(e) => {
                 let msg = e.to_string();
                 if let Some(rest) = msg.strip_prefix("__TOOL_ERROR__") {
-                    // Pass through standardized tool error payload
+                    // Pass through standardized tool error payload for binary refusal
                     warn!(
                         "Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}",
                         params.url
                     );
                     CallToolResult::error(rest.to_string())
                 } else {
+                    // Unknown error: do not expose internal traces
                     error!("Error fetching URL {}: {}", params.url, msg);
-                    CallToolResult::error(format!("Error fetching URL: {}", msg))
+                    let payload = build_error_payload(
+                        "ERR_FETCH_UNKNOWN",
+                        "An unknown error occurred while fetching the content",
+                        serde_json::json!({
+                            "url": params.url,
+                            "hint": "Please try again later or provide a different URL.",
+                        }),
+                    );
+                    CallToolResult::error(payload)
                 }
             }
         }
