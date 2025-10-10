@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 use super::transport::StdioTransport;
 use super::types::*;
@@ -41,17 +41,15 @@ impl McpServer {
 
         loop {
             match self.transport.read_message().await? {
-                Some(message) => {
-                    match message {
-                        McpMessage::Request(request) => {
-                            let response = self.handle_request(request).await;
-                            self.transport.write_response(response).await?;
-                        }
-                        McpMessage::Notification(notification) => {
-                            self.handle_notification(notification).await;
-                        }
+                Some(message) => match message {
+                    McpMessage::Request(request) => {
+                        let response = self.handle_request(request).await;
+                        self.transport.write_response(response).await?;
                     }
-                }
+                    McpMessage::Notification(notification) => {
+                        self.handle_notification(notification).await;
+                    }
+                },
                 None => {
                     info!("Client disconnected");
                     break;

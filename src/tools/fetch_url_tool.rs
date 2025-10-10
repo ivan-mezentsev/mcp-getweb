@@ -1,9 +1,10 @@
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde_json::json;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
+use crate::utils::content_guard::{build_error_payload, safe_truncate_utf8};
 use crate::utils::duckduckgo_search::{fetch_url_content, ContentExtractionOptions};
 
 pub static FETCH_URL_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
@@ -136,9 +137,10 @@ impl FetchUrlTool {
             Ok(content) => {
                 // Truncate content if it's too long
                 let truncated_content = if content.len() > params.max_length {
-                    format!(
-                        "{}... [Content truncated due to length]",
-                        &content[..params.max_length]
+                    safe_truncate_utf8(
+                        &content,
+                        params.max_length,
+                        "... [Content truncated due to length]",
                     )
                 } else {
                     content.clone()
@@ -162,8 +164,26 @@ impl FetchUrlTool {
                 CallToolResult::success(format!("{}{}", truncated_content, metadata))
             }
             Err(e) => {
-                error!("Error fetching URL {}: {}", params.url, e);
-                CallToolResult::error(format!("Error fetching URL: {}", e))
+                let err_str = e.to_string();
+                // Detect standardized binary refusal payload by its first line
+                let first_line = err_str.lines().next().unwrap_or("");
+                if first_line == "Fetch cannot be performed for this type of content" {
+                    // Binary content refusal — log WARN and pass-through as-is
+                    warn!("Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}", params.url);
+                    CallToolResult::error(err_str)
+                } else {
+                    // Unknown error — do not leak internal traces in external message
+                    error!("Error fetching URL {}: {}", params.url, err_str);
+                    let payload = build_error_payload(
+                        "ERR_FETCH_UNKNOWN",
+                        "An unknown error occurred while fetching the content",
+                        json!({
+                            "url": params.url,
+                            "hint": "Please try again later or provide a different URL."
+                        }),
+                    );
+                    CallToolResult::error(payload)
+                }
             }
         }
     }

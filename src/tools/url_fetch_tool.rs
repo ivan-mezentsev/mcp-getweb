@@ -1,19 +1,21 @@
-use once_cell::sync::Lazy;
-use serde::Deserialize;
-use serde_json::json;
-use std::collections::VecDeque;
-use std::rc::Rc;
-use std::cell::RefCell;
-use tracing::{error, info};
-use regex::Regex;
 use html5ever::driver::ParseOpts;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use html5ever::tree_builder::TreeBuilderOpts;
-use markup5ever_rcdom::{RcDom, Handle, NodeData};
 use html5ever::Attribute;
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde::Deserialize;
+use serde_json::json;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::OnceLock;
+use tracing::{error, info, warn};
+
+use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
 
@@ -181,7 +183,11 @@ impl MarkdownWriter {
         self.push_str("\n\n");
     }
 
-    pub fn run(mut self, root_node: &Handle, handlers: &mut [TagHandler]) -> anyhow::Result<String> {
+    pub fn run(
+        mut self,
+        root_node: &Handle,
+        handlers: &mut [TagHandler],
+    ) -> anyhow::Result<String> {
         self.visit_node(root_node, handlers)?;
         Ok(Self::prettify_markdown(self.markdown))
     }
@@ -327,9 +333,20 @@ impl HandleTag for WebpageChromeRemover {
 
         // Skip elements with ad-related classes
         if tag.has_any_classes(&[
-            "ad", "ads", "advertisement", "banner", "popup", "modal",
-            "cookie", "newsletter", "sidebar", "widget", "promo",
-            "sponsored", "affiliate", "tracking"
+            "ad",
+            "ads",
+            "advertisement",
+            "banner",
+            "popup",
+            "modal",
+            "cookie",
+            "newsletter",
+            "sidebar",
+            "widget",
+            "promo",
+            "sponsored",
+            "affiliate",
+            "tracking",
         ]) {
             return StartTagOutcome::Skip;
         }
@@ -337,8 +354,11 @@ impl HandleTag for WebpageChromeRemover {
         // Also check individual classes for more specific filtering
         let element_classes = tag.classes();
         for class in &element_classes {
-            if class.contains("ad") || class.contains("banner") 
-                || class.contains("popup") || class.contains("promo") {
+            if class.contains("ad")
+                || class.contains("banner")
+                || class.contains("popup")
+                || class.contains("promo")
+            {
                 return StartTagOutcome::Skip;
             }
         }
@@ -351,9 +371,13 @@ impl HandleTag for WebpageChromeRemover {
         // Skip elements with ad-related IDs
         if let Some(id) = tag.attr("id") {
             let id_lower = id.to_lowercase();
-            if id_lower.contains("ad") || id_lower.contains("banner") 
-                || id_lower.contains("popup") || id_lower.contains("cookie")
-                || id_lower.contains("newsletter") || id_lower.contains("sidebar") {
+            if id_lower.contains("ad")
+                || id_lower.contains("banner")
+                || id_lower.contains("popup")
+                || id_lower.contains("cookie")
+                || id_lower.contains("newsletter")
+                || id_lower.contains("sidebar")
+            {
                 return StartTagOutcome::Skip;
             }
         }
@@ -661,7 +685,10 @@ impl HandleTag for CodeHandler {
 }
 
 // HTML to Markdown conversion
-pub fn convert_html_to_markdown(html: &[u8], handlers: &mut [TagHandler]) -> anyhow::Result<String> {
+pub fn convert_html_to_markdown(
+    html: &[u8],
+    handlers: &mut [TagHandler],
+) -> anyhow::Result<String> {
     let dom = parse_html(html)?;
 
     let markdown_writer = MarkdownWriter::new();
@@ -703,23 +730,69 @@ impl UrlFetchTool {
         };
 
         let client = reqwest::Client::new();
-        let response = client.get(&url).send().await
+        let response = client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch URL: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error {}: {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown error")));
+            return Err(anyhow::anyhow!(
+                "HTTP error {}: {}",
+                response.status(),
+                response
+                    .status()
+                    .canonical_reason()
+                    .unwrap_or("Unknown error")
+            ));
         }
-
-        let content_type_header = response.headers()
+        // Capture header and status for later use
+        let status_code = response.status().as_u16();
+        let content_type_opt: Option<String> = response
+            .headers()
             .get("content-type")
             .and_then(|ct| ct.to_str().ok())
-            .unwrap_or("text/html")
-            .to_string();
+            .map(|s| s.to_string());
 
-        let body = response.bytes().await
+        // Read the body once (simple strategy). We will peek into the first 512 bytes.
+        let body = response
+            .bytes()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
 
-        let content_type = match content_type_header.as_str() {
+        // Binary guard before mapping ContentType
+        let head_len = std::cmp::min(512, body.len());
+        let head = &body[..head_len];
+        match detect_binary(content_type_opt.as_deref(), head) {
+            BinaryDetection::Binary { content_type } => {
+                // Build standardized error payload and wrap with recognizable prefix for pass-through
+                let ct_eff = content_type.clone().or_else(|| content_type_opt.clone());
+                warn!(
+                    "Refusing binary content (policy=binary-guard) url={} content_type={:?} size_bytes={}",
+                    url,
+                    ct_eff,
+                    body.len()
+                );
+                let details = serde_json::json!({
+                    "url": url,
+                    "httpStatus": status_code,
+                    "contentType": ct_eff,
+                    "size": body.len(),
+                    "hint": "Binary content is not supported by this tool. Provide a text-based URL or use a tool that handles binary files."
+                });
+                let payload = build_error_payload(
+                    "ERR_FETCH_UNSUPPORTED_BINARY",
+                    "Fetch cannot be performed for this type of content",
+                    details,
+                );
+                return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
+            }
+            BinaryDetection::Text => {}
+        }
+
+        // After guard, map ContentType for processing
+        let content_type_header = content_type_opt.as_deref().unwrap_or("text/html");
+        let content_type = match content_type_header {
             ct if ct.contains("text/html") => ContentType::Html,
             ct if ct.contains("text/plain") => ContentType::Plaintext,
             ct if ct.contains("application/json") => ContentType::Json,
@@ -742,11 +815,9 @@ impl UrlFetchTool {
 
                 convert_html_to_markdown(&body, &mut handlers)
             }
-            ContentType::Plaintext => {
-                Ok(std::str::from_utf8(&body)
-                    .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
-                    .to_owned())
-            }
+            ContentType::Plaintext => Ok(std::str::from_utf8(&body)
+                .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?
+                .to_owned()),
             ContentType::Json => {
                 let json: serde_json::Value = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("Invalid JSON: {}", e))?;
@@ -790,8 +861,27 @@ impl UrlFetchTool {
                 }
             }
             Err(e) => {
-                error!("Error fetching URL {}: {}", params.url, e);
-                CallToolResult::error(format!("Error fetching URL: {}", e))
+                let msg = e.to_string();
+                if let Some(rest) = msg.strip_prefix("__TOOL_ERROR__") {
+                    // Pass through standardized tool error payload for binary refusal
+                    warn!(
+                        "Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}",
+                        params.url
+                    );
+                    CallToolResult::error(rest.to_string())
+                } else {
+                    // Unknown error: do not expose internal traces
+                    error!("Error fetching URL {}: {}", params.url, msg);
+                    let payload = build_error_payload(
+                        "ERR_FETCH_UNKNOWN",
+                        "An unknown error occurred while fetching the content",
+                        serde_json::json!({
+                            "url": params.url,
+                            "hint": "Please try again later or provide a different URL.",
+                        }),
+                    );
+                    CallToolResult::error(payload)
+                }
             }
         }
     }

@@ -80,8 +80,6 @@ pub struct JinaReaderParams {
     pub timeout: u32,
 }
 
-
-
 pub struct JinaReaderService {
     client: Client,
     api_key: String,
@@ -109,17 +107,38 @@ impl JinaReaderService {
     ) -> Result<JinaReaderResponse, JinaReaderError> {
         let request_body = JinaReaderRequest {
             url: url.to_string(),
-            with_links_summary: if params.with_links_summary { Some(true) } else { None },
-            with_images_summary: if params.with_images_summary { Some(true) } else { None },
-            with_generated_alt: if params.with_generated_alt { Some(true) } else { None },
-            return_format: if params.return_format != "markdown" { Some(params.return_format.clone()) } else { None },
+            with_links_summary: if params.with_links_summary {
+                Some(true)
+            } else {
+                None
+            },
+            with_images_summary: if params.with_images_summary {
+                Some(true)
+            } else {
+                None
+            },
+            with_generated_alt: if params.with_generated_alt {
+                Some(true)
+            } else {
+                None
+            },
+            return_format: if params.return_format != "markdown" {
+                Some(params.return_format.clone())
+            } else {
+                None
+            },
             no_cache: if params.no_cache { Some(true) } else { None },
-            timeout: if params.timeout != 10 { Some(params.timeout) } else { None },
+            timeout: if params.timeout != 10 {
+                Some(params.timeout)
+            } else {
+                None
+            },
         };
 
         debug!("Sending request to Jina Reader API: {:?}", request_body);
 
-        let mut request_builder = self.client
+        let mut request_builder = self
+            .client
             .post(&self.endpoint)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
@@ -155,9 +174,9 @@ impl JinaReaderService {
             Ok(response) => {
                 let response_text = response.text().await?;
                 debug!("Received response from Jina Reader API: {}", response_text);
-                
+
                 let api_response = serde_json::from_str::<JinaReaderApiResponse>(&response_text)?;
-                
+
                 // Convert to the expected response format
                 let reader_response = JinaReaderResponse {
                     url: api_response.data.url,
@@ -167,9 +186,9 @@ impl JinaReaderService {
                     links: api_response.data.links,
                     images: api_response.data.images,
                 };
-                
+
                 Ok(reader_response)
-            },
+            }
             Err(err) => {
                 if let Some(status) = err.status() {
                     error!("Jina Reader API error: Status {}", status);
