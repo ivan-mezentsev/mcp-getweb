@@ -4,7 +4,8 @@ use serde_json::json;
 use tracing::{error, info};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
-use crate::utils::jina_reader::{JinaReaderParams as ServiceParams, JinaReaderService};
+use crate::utils::content_guard::safe_truncate_utf8;
+use crate::utils::jina_reader::{JinaReaderParams as ServiceParams, JinaReaderService}; // use unified safe truncation
 
 pub static JINA_READER_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| {
     ToolDefinition {
@@ -158,12 +159,13 @@ impl JinaReaderTool {
 
         match service.read_url(&params.url, &service_params).await {
             Ok(response) => {
-                // Truncate content if it's too long
+                // Truncate content if it's too long (safe UTF-8, unified suffix)
                 let content = response.content.unwrap_or_default();
                 let truncated_content = if content.len() > params.max_length {
-                    format!(
-                        "{}... [Content truncated due to length]",
-                        &content[..params.max_length]
+                    safe_truncate_utf8(
+                        &content,
+                        params.max_length,
+                        "... [Content truncated due to length]",
                     )
                 } else {
                     content.clone()
