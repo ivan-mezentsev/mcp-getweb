@@ -440,11 +440,23 @@ pub async fn fetch_url_content(url: &str, options: &ContentExtractionOptions) ->
         .await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!(
-            "Failed to fetch URL: {} ({})",
-            url,
-            response.status()
-        ));
+        // Standardize HTTP error payload for the tool layer
+        use crate::utils::content_guard::build_error_payload;
+        let status = response.status();
+        let code_num = status.as_u16();
+        let reason = status.canonical_reason().unwrap_or("Unknown error");
+        let message = format!("HTTP error {}: {}", code_num, reason);
+        let payload = build_error_payload(
+            "ERR_FETCH_HTTP",
+            &message,
+            serde_json::json!({
+                "url": url,
+                "httpStatus": code_num,
+                "reason": reason,
+                "hint": if code_num == 404 { "The resource was not found (404)." } else { "Please verify the URL and try again." }
+            }),
+        );
+        return Err(anyhow!(payload));
     }
     // Import content guard helpers
     use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};

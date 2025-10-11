@@ -165,24 +165,37 @@ impl FetchUrlTool {
             }
             Err(e) => {
                 let err_str = e.to_string();
-                // Detect standardized binary refusal payload by its first line
-                let first_line = err_str.lines().next().unwrap_or("");
-                if first_line == "Fetch cannot be performed for this type of content" {
-                    // Binary content refusal — log WARN and pass-through as-is
-                    warn!("Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}", params.url);
-                    CallToolResult::error(err_str)
-                } else {
-                    // Unknown error — do not leak internal traces in external message
-                    error!("Error fetching URL {}: {}", params.url, err_str);
-                    let payload = build_error_payload(
-                        "ERR_FETCH_UNKNOWN",
-                        "An unknown error occurred while fetching the content",
-                        json!({
-                            "url": params.url,
-                            "hint": "Please try again later or provide a different URL."
-                        }),
-                    );
-                    CallToolResult::error(payload)
+                // Detect standardized payloads by inspecting the trailing JSON line starting with '{'
+                let mut code: Option<String> = None;
+                if let Some(json_line) = err_str.lines().rev().find(|l| l.trim_start().starts_with('{')) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_line) {
+                        code = v.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+                    }
+                }
+
+                match code.as_deref() {
+                    Some("ERR_FETCH_UNSUPPORTED_BINARY") => {
+                        warn!("Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}", params.url);
+                        CallToolResult::error(err_str)
+                    }
+                    Some("ERR_FETCH_HTTP") | Some("ERR_FETCH_PDF_PARSE") | Some("ERR_FETCH_PDF_ENCRYPTED") => {
+                        // Pass-through standardized HTTP/PDF errors as-is
+                        warn!("Standardized fetch error for URL {}: {}", params.url, code.unwrap());
+                        CallToolResult::error(err_str)
+                    }
+                    _ => {
+                        // Unknown error — do not leak internal traces in external message
+                        error!("Error fetching URL {}: {}", params.url, err_str);
+                        let payload = build_error_payload(
+                            "ERR_FETCH_UNKNOWN",
+                            "An unknown error occurred while fetching the content",
+                            json!({
+                                "url": params.url,
+                                "hint": "Please try again later or provide a different URL."
+                            }),
+                        );
+                        CallToolResult::error(payload)
+                    }
                 }
             }
         }

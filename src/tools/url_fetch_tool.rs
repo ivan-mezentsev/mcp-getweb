@@ -739,14 +739,22 @@ impl UrlFetchTool {
             .map_err(|e| anyhow::anyhow!("Failed to fetch URL: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "HTTP error {}: {}",
-                response.status(),
-                response
-                    .status()
-                    .canonical_reason()
-                    .unwrap_or("Unknown error")
-            ));
+            // Map real HTTP errors to standardized MCP payload with explicit code
+            let status = response.status();
+            let code_num = status.as_u16();
+            let reason = status.canonical_reason().unwrap_or("Unknown error");
+            let msg = format!("HTTP error {}: {}", code_num, reason);
+            let payload = build_error_payload(
+                "ERR_FETCH_HTTP",
+                &msg,
+                serde_json::json!({
+                    "url": url,
+                    "httpStatus": code_num,
+                    "reason": reason,
+                    "hint": if code_num == 404 { "The resource was not found (404)." } else { "Please verify the URL and try again." }
+                }),
+            );
+            return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
         }
         // Capture header and status for later use
         let status_code = response.status().as_u16();
@@ -969,11 +977,19 @@ impl UrlFetchTool {
             Err(e) => {
                 let msg = e.to_string();
                 if let Some(rest) = msg.strip_prefix("__TOOL_ERROR__") {
-                    // Pass through standardized tool error payload for binary refusal
-                    warn!(
-                        "Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}",
-                        params.url
-                    );
+                    // Pass through standardized tool error payload (HTTP/PDF/Binary/etc.)
+                    let mut code: Option<String> = None;
+                    if let Some(json_line) = rest.lines().rev().find(|l| l.trim_start().starts_with('{')) {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_line) {
+                            code = v.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+                        }
+                    }
+                    match code.as_deref() {
+                        Some("ERR_FETCH_UNSUPPORTED_BINARY") => warn!("Refused binary content for URL {}", params.url),
+                        Some("ERR_FETCH_HTTP") => warn!("HTTP error while fetching URL {}", params.url),
+                        Some("ERR_FETCH_PDF_PARSE") | Some("ERR_FETCH_PDF_ENCRYPTED") => warn!("PDF handling error for URL {}", params.url),
+                        _ => warn!("Standardized tool error for URL {}", params.url),
+                    }
                     CallToolResult::error(rest.to_string())
                 } else {
                     // Unknown error: do not expose internal traces
