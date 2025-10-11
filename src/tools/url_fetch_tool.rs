@@ -14,8 +14,10 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use tracing::{error, info, warn};
+use std::time::Instant;
 
 use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};
+use crate::utils::pdf::{extract_text_from_pdf_mem, is_pdf};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
 
@@ -754,15 +756,119 @@ impl UrlFetchTool {
             .and_then(|ct| ct.to_str().ok())
             .map(|s| s.to_string());
 
+        // Early size guard for PDFs indicated by header-only (avoid reading body if too large)
+        const PDF_LIMIT_BYTES: u64 = 500 * 1024 * 1024; // 500 MiB
+        let content_length_opt = response.content_length();
+        let header_indicates_pdf = content_type_opt
+            .as_deref()
+            .map(|ct| ct.to_ascii_lowercase().contains("application/pdf"))
+            .unwrap_or(false);
+
+        if header_indicates_pdf {
+            if let Some(clen) = content_length_opt {
+                if clen > PDF_LIMIT_BYTES {
+                    warn!(
+                        "Refusing oversized PDF by header before body download url={} content_length={} limit={}",
+                        url,
+                        clen,
+                        PDF_LIMIT_BYTES
+                    );
+                    let details = serde_json::json!({
+                        "url": url,
+                        "httpStatus": status_code,
+                        "contentType": content_type_opt,
+                        "size": clen,
+                        "limit": PDF_LIMIT_BYTES,
+                        "hint": "PDF exceeds 500 MiB limit and will not be processed.",
+                    });
+                    let payload = build_error_payload(
+                        "ERR_FETCH_PDF_PARSE",
+                        "PDF exceeds the allowed size limit",
+                        details,
+                    );
+                    return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
+                }
+            }
+        }
+
         // Read the body once (simple strategy). We will peek into the first 512 bytes.
         let body = response
             .bytes()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
 
-        // Binary guard before mapping ContentType
+        // PDF path: detect before the generic binary guard to avoid false refusal
         let head_len = std::cmp::min(512, body.len());
         let head = &body[..head_len];
+        if is_pdf(content_type_opt.as_deref(), head) {
+            let size = body.len() as u64;
+            if size > PDF_LIMIT_BYTES {
+                warn!(
+                    "Refusing oversized PDF after download url={} size_bytes={} limit={}",
+                    url,
+                    size,
+                    PDF_LIMIT_BYTES
+                );
+                let details = serde_json::json!({
+                    "url": url,
+                    "httpStatus": status_code,
+                    "contentType": content_type_opt,
+                    "size": size,
+                    "limit": PDF_LIMIT_BYTES,
+                    "hint": "PDF exceeds 500 MiB limit and will not be processed.",
+                });
+                let payload = build_error_payload(
+                    "ERR_FETCH_PDF_PARSE",
+                    "PDF exceeds the allowed size limit",
+                    details,
+                );
+                return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
+            }
+
+            info!(
+                "Starting PDF extraction url={} size_bytes={}",
+                url,
+                size
+            );
+            let started = Instant::now();
+            match extract_text_from_pdf_mem(&body) {
+                Ok(text) => {
+                    let took_ms = started.elapsed().as_millis();
+                    info!(
+                        "Completed PDF extraction url={} size_bytes={} took_ms={}",
+                        url,
+                        size,
+                        took_ms
+                    );
+                    // Markdown wrapper: title with Source + full text
+                    let md = format!("# Source: `{}`\n\n{}", url, text);
+                    return Ok(md);
+                }
+                Err(err) => {
+                    warn!(
+                        "PDF extraction failed url={} size_bytes={} error={}",
+                        url,
+                        size,
+                        err
+                    );
+                    let details = serde_json::json!({
+                        "url": url,
+                        "httpStatus": status_code,
+                        "contentType": content_type_opt,
+                        "size": size,
+                        "hint": "Failed to parse PDF. The file may be corrupted or encrypted.",
+                    });
+                    let payload = build_error_payload(
+                        "ERR_FETCH_PDF_PARSE",
+                        "Failed to parse the PDF document",
+                        details,
+                    );
+                    return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
+                }
+            }
+        }
+
+        // Binary guard before mapping ContentType
         match detect_binary(content_type_opt.as_deref(), head) {
             BinaryDetection::Binary { content_type } => {
                 // Build standardized error payload and wrap with recognizable prefix for pass-through
