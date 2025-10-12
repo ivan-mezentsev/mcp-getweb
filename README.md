@@ -73,16 +73,13 @@ Parameters:
 
 ### 4) URL Content Fetcher (`fetch-url`)
 
-Fetch the clean content of a URL and return it as text with extraction controls.
+Fetch the clean content of a URL and return it as text.
 
 Parameters:
 
 - `url` (string, required): The URL to fetch
-- `maxLength` (integer, optional): Maximum content length (default: 10000, min: 1000, max: 50000)
-- `extractMainContent` (boolean, optional): Attempt to extract main content (default: true)
-- `includeLinks` (boolean, optional): Include link text (default: true)
-- `includeImages` (boolean, optional): Include image alt text (default: true)
-- `excludeTags` (array of string, optional): Tags to exclude (default includes `script`, `style`, `noscript`, `iframe`, `svg`, `nav`, `footer`, `header`, `aside`)
+- `maxLength` (integer, optional): Maximum content length (default: 30000, min: 1000, max: 500000)
+- `extractMainContent` (boolean, optional): Attempt to extract main content when HTML (default: true)
 
 ### 5) URL Metadata Extractor (`url-metadata`)
 
@@ -126,7 +123,7 @@ Note: Requires `JINA_API_KEY` to be set.
 - Felo AI for up-to-date, developer-focused search insights
 - Rust ecosystem and crates that power this server:
   - tokio, reqwest, serde, serde_json, tracing, tracing-subscriber, clap
-  - scraper, html5ever, markup5ever_rcdom, regex, once_cell, futures, async-stream
+  - html2text, chardetng, encoding_rs, scraper, html5ever, markup5ever_rcdom, regex, once_cell, futures, async-stream
   - url, uuid, thiserror, tokio-util, rand, urlencoding
 - The broader MCP community for guidance, examples, and discussions
 
