@@ -5,7 +5,7 @@ use tracing::{error, info, warn};
 
 use crate::mcp::types::{CallToolResult, ToolAnnotations, ToolDefinition};
 use crate::utils::content_guard::{build_error_payload, safe_truncate_utf8};
-use crate::utils::duckduckgo_search::{fetch_url_content, ContentExtractionOptions};
+use crate::utils::readability_extract::{fetch_url_content, ExtractionKind};
 
 pub static FETCH_URL_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
     name: "fetch-url".to_string(),
@@ -21,32 +21,15 @@ pub static FETCH_URL_TOOL_DEFINITION: Lazy<ToolDefinition> = Lazy::new(|| ToolDe
             },
             "maxLength": {
                 "type": "integer",
-                "description": "Maximum length of content to return (default: 10000)",
-                "default": 10000,
+                "description": "Maximum length of content to return (default: 30000)",
+                "default": 30000,
                 "minimum": 1000,
-                "maximum": 50000
+                "maximum": 500000
             },
             "extractMainContent": {
                 "type": "boolean",
                 "description": "Whether to attempt to extract main content (default: true)",
                 "default": true
-            },
-            "includeLinks": {
-                "type": "boolean",
-                "description": "Whether to include link text (default: true)",
-                "default": true
-            },
-            "includeImages": {
-                "type": "boolean",
-                "description": "Whether to include image alt text (default: true)",
-                "default": true
-            },
-            "excludeTags": {
-                "type": "array",
-                "description": "Tags to exclude from extraction (default: script, style, etc.)",
-                "items": {
-                    "type": "string"
-                }
             }
         },
         "required": ["url"]
@@ -65,35 +48,17 @@ struct FetchUrlParams {
     max_length: usize,
     #[serde(default = "default_true", rename = "extractMainContent")]
     extract_main_content: bool,
-    #[serde(default = "default_true", rename = "includeLinks")]
-    include_links: bool,
-    #[serde(default = "default_true", rename = "includeImages")]
-    include_images: bool,
-    #[serde(default = "default_exclude_tags", rename = "excludeTags")]
-    exclude_tags: Vec<String>,
 }
 
 fn default_max_length() -> usize {
-    10000
+    30000
 }
 
 fn default_true() -> bool {
     true
 }
 
-fn default_exclude_tags() -> Vec<String> {
-    vec![
-        "script".to_string(),
-        "style".to_string(),
-        "noscript".to_string(),
-        "iframe".to_string(),
-        "svg".to_string(),
-        "nav".to_string(),
-        "footer".to_string(),
-        "header".to_string(),
-        "aside".to_string(),
-    ]
-}
+// legacy defaults removed
 
 pub struct FetchUrlTool;
 
@@ -125,20 +90,14 @@ impl FetchUrlTool {
             "Fetching content from URL: {} (maxLength: {})",
             params.url, params.max_length
         );
-
-        let options = ContentExtractionOptions {
-            extract_main_content: params.extract_main_content,
-            include_links: params.include_links,
-            include_images: params.include_images,
-            exclude_tags: params.exclude_tags,
-        };
-
-        match fetch_url_content(&params.url, &options).await {
-            Ok(content) => {
+        let parsed_url = url::Url::parse(&params.url).expect("validated above");
+        match fetch_url_content(&parsed_url, params.extract_main_content).await {
+            Ok(res) => {
+                let content = &res.text;
                 // Truncate content if it's too long
                 let truncated_content = if content.len() > params.max_length {
                     safe_truncate_utf8(
-                        &content,
+                        content,
                         params.max_length,
                         "... [Content truncated due to length]",
                     )
@@ -147,12 +106,20 @@ impl FetchUrlTool {
                 };
 
                 // Add metadata about the extraction
+                let kind_str = match res.kind {
+                    ExtractionKind::HtmlMain => "HTML/Main",
+                    ExtractionKind::HtmlFull => "HTML/Full",
+                    ExtractionKind::Pdf => "PDF",
+                    ExtractionKind::PlainText => "PlainText",
+                };
+                let ct = res.content_type.as_deref().unwrap_or("unknown");
                 let metadata = format!(
-                    "\n---\nExtraction settings:\n- URL: {}\n- Main content extraction: {}\n- Links included: {}\n- Images included: {}\n- Content length: {} characters{}\n---",
+                    "\n---\nExtraction settings:\n- URL: {}\n- Main content extraction: {}\n- Main fragment detected: {}\n- Detected content type: {}\n- Extraction kind: {}\n- Content length: {} characters{}\n---",
                     params.url,
                     if params.extract_main_content { "Enabled" } else { "Disabled" },
-                    if params.include_links { "Yes" } else { "No" },
-                    if params.include_images { "Yes (as alt text)" } else { "No" },
+                    if res.main_fragment_used { "Yes" } else { "No" },
+                    ct,
+                    kind_str,
                     content.len(),
                     if content.len() > params.max_length {
                         format!(" (truncated to {})", params.max_length)
@@ -167,9 +134,16 @@ impl FetchUrlTool {
                 let err_str = e.to_string();
                 // Detect standardized payloads by inspecting the trailing JSON line starting with '{'
                 let mut code: Option<String> = None;
-                if let Some(json_line) = err_str.lines().rev().find(|l| l.trim_start().starts_with('{')) {
+                if let Some(json_line) = err_str
+                    .lines()
+                    .rev()
+                    .find(|l| l.trim_start().starts_with('{'))
+                {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_line) {
-                        code = v.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+                        code = v
+                            .get("code")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_string());
                     }
                 }
 
@@ -178,9 +152,15 @@ impl FetchUrlTool {
                         warn!("Refused fetch due to unsupported binary content (policy=binary-guard) for URL {}", params.url);
                         CallToolResult::error(err_str)
                     }
-                    Some("ERR_FETCH_HTTP") | Some("ERR_FETCH_PDF_PARSE") | Some("ERR_FETCH_PDF_ENCRYPTED") => {
+                    Some("ERR_FETCH_HTTP")
+                    | Some("ERR_FETCH_PDF_PARSE")
+                    | Some("ERR_FETCH_PDF_ENCRYPTED") => {
                         // Pass-through standardized HTTP/PDF errors as-is
-                        warn!("Standardized fetch error for URL {}: {}", params.url, code.unwrap());
+                        warn!(
+                            "Standardized fetch error for URL {}: {}",
+                            params.url,
+                            code.unwrap()
+                        );
                         CallToolResult::error(err_str)
                     }
                     _ => {

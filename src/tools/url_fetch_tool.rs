@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::OnceLock;
-use tracing::{error, info, warn};
 use std::time::Instant;
+use tracing::{error, info, warn};
 
 use crate::utils::content_guard::{build_error_payload, detect_binary, BinaryDetection};
 use crate::utils::pdf::{extract_text_from_pdf_mem, is_pdf};
@@ -813,9 +813,7 @@ impl UrlFetchTool {
             if size > PDF_LIMIT_BYTES {
                 warn!(
                     "Refusing oversized PDF after download url={} size_bytes={} limit={}",
-                    url,
-                    size,
-                    PDF_LIMIT_BYTES
+                    url, size, PDF_LIMIT_BYTES
                 );
                 let details = serde_json::json!({
                     "url": url,
@@ -833,20 +831,14 @@ impl UrlFetchTool {
                 return Err(anyhow::anyhow!(format!("__TOOL_ERROR__{}", payload)));
             }
 
-            info!(
-                "Starting PDF extraction url={} size_bytes={}",
-                url,
-                size
-            );
+            info!("Starting PDF extraction url={} size_bytes={}", url, size);
             let started = Instant::now();
             match extract_text_from_pdf_mem(&body) {
                 Ok(text) => {
                     let took_ms = started.elapsed().as_millis();
                     info!(
                         "Completed PDF extraction url={} size_bytes={} took_ms={}",
-                        url,
-                        size,
-                        took_ms
+                        url, size, took_ms
                     );
                     // Markdown wrapper: title with Source + full text
                     let md = format!("# Source: `{}`\n\n{}", url, text);
@@ -855,9 +847,7 @@ impl UrlFetchTool {
                 Err(err) => {
                     warn!(
                         "PDF extraction failed url={} size_bytes={} error={}",
-                        url,
-                        size,
-                        err
+                        url, size, err
                     );
                     let details = serde_json::json!({
                         "url": url,
@@ -979,15 +969,26 @@ impl UrlFetchTool {
                 if let Some(rest) = msg.strip_prefix("__TOOL_ERROR__") {
                     // Pass through standardized tool error payload (HTTP/PDF/Binary/etc.)
                     let mut code: Option<String> = None;
-                    if let Some(json_line) = rest.lines().rev().find(|l| l.trim_start().starts_with('{')) {
+                    if let Some(json_line) =
+                        rest.lines().rev().find(|l| l.trim_start().starts_with('{'))
+                    {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_line) {
-                            code = v.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+                            code = v
+                                .get("code")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.to_string());
                         }
                     }
                     match code.as_deref() {
-                        Some("ERR_FETCH_UNSUPPORTED_BINARY") => warn!("Refused binary content for URL {}", params.url),
-                        Some("ERR_FETCH_HTTP") => warn!("HTTP error while fetching URL {}", params.url),
-                        Some("ERR_FETCH_PDF_PARSE") | Some("ERR_FETCH_PDF_ENCRYPTED") => warn!("PDF handling error for URL {}", params.url),
+                        Some("ERR_FETCH_UNSUPPORTED_BINARY") => {
+                            warn!("Refused binary content for URL {}", params.url)
+                        }
+                        Some("ERR_FETCH_HTTP") => {
+                            warn!("HTTP error while fetching URL {}", params.url)
+                        }
+                        Some("ERR_FETCH_PDF_PARSE") | Some("ERR_FETCH_PDF_ENCRYPTED") => {
+                            warn!("PDF handling error for URL {}", params.url)
+                        }
                         _ => warn!("Standardized tool error for URL {}", params.url),
                     }
                     CallToolResult::error(rest.to_string())
