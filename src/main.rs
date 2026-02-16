@@ -74,13 +74,14 @@ fn strip_ansi_codes(text: &str) -> String {
 async fn main() {
     // Parse command line arguments first
     let matches = Command::new("mcp-getweb")
-        .version("1.2.2")
+        .version("1.6.0")
         .about("A Model Context Protocol server for web search")
         .author("Ivan Mezentsev")
         .long_about(
             "This MCP server provides the following tools:\n\
             - duckduckgo-search: Search the web using DuckDuckGo\n\
             - google-search: Search the web using Google\n\
+            - linkup_search: Search the web using Linkup API\n\
             - fetch-url: Fetch and extract content from a URL\n\
             - url-metadata: Extract metadata from a URL\n\
             - url-fetch: Fetch web pages and convert them to markdown\n\
@@ -105,6 +106,13 @@ async fn main() {
                 .long("jina-api-key")
                 .value_name("KEY")
                 .help("Jina Reader API key")
+                .action(clap::ArgAction::Set),
+        )
+        .arg(
+            Arg::new("linkup-api-key")
+                .long("linkup-api-key")
+                .value_name("KEY")
+                .help("Linkup API key")
                 .action(clap::ArgAction::Set),
         )
         .arg(
@@ -153,6 +161,12 @@ async fn main() {
         .cloned()
         .or_else(|| std::env::var("JINA_API_KEY").ok());
 
+    // Get Linkup API key from command line or environment
+    let linkup_api_key = matches
+        .get_one::<String>("linkup-api-key")
+        .cloned()
+        .or_else(|| std::env::var("LINKUP_API_KEY").ok());
+
     // Log Google Search configuration status (without exposing secrets)
     match (&google_api_key, &google_search_engine_id) {
         (Some(_), Some(_)) => {
@@ -176,6 +190,16 @@ async fn main() {
         }
         None => {
             info!("Jina Reader API key not found - Jina Reader tool will be disabled");
+        }
+    }
+
+    // Log Linkup configuration status (without exposing secrets)
+    match &linkup_api_key {
+        Some(_) => {
+            info!("Linkup Search tool enabled");
+        }
+        None => {
+            info!("Linkup API key not found - Linkup Search tool will be disabled");
         }
     }
 
@@ -205,7 +229,7 @@ async fn main() {
     // Start the MCP server
     info!("Starting MCP server...");
 
-    let mut server = McpServer::new(google_config, jina_api_key);
+    let mut server = McpServer::new(google_config, jina_api_key, linkup_api_key);
     if let Err(e) = server.start().await {
         error!("Failed to start server: {}", e);
         process::exit(1);

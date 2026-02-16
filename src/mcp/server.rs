@@ -9,6 +9,7 @@ use crate::tools::{
     fetch_url_tool::{FetchUrlTool, FETCH_URL_TOOL_DEFINITION},
     google_search_tool::{GoogleSearchTool, GOOGLE_SEARCH_TOOL_DEFINITION},
     jina_reader_tool::{JinaReaderTool, JINA_READER_TOOL_DEFINITION},
+    linkup_search_tool::{LinkupSearchTool, LINKUP_SEARCH_TOOL_DEFINITION},
     metadata_tool::{MetadataTool, METADATA_TOOL_DEFINITION},
     url_fetch_tool::{UrlFetchTool, URL_FETCH_TOOL_DEFINITION},
 };
@@ -23,16 +24,22 @@ pub struct McpServer {
     transport: StdioTransport,
     google_config: Option<GoogleSearchConfig>,
     jina_api_key: Option<String>,
+    linkup_api_key: Option<String>,
     initialized: bool,
 }
 
 impl McpServer {
-    pub fn new(google_config: Option<GoogleSearchConfig>, jina_api_key: Option<String>) -> Self {
+    pub fn new(
+        google_config: Option<GoogleSearchConfig>,
+        jina_api_key: Option<String>,
+        linkup_api_key: Option<String>,
+    ) -> Self {
         Self {
             transport: StdioTransport::new(),
             initialized: false,
             google_config,
             jina_api_key,
+            linkup_api_key,
         }
     }
 
@@ -117,9 +124,9 @@ impl McpServer {
                     let result = InitializeResult {
                             protocol_version: "2024-11-05".to_string(),
                             server_info: ServerInfo {
-                                name: "DuckDuckGo, Google Search & Felo AI Search MCP".to_string(),
+                                name: "DuckDuckGo, Google Search, Linkup & Felo AI Search MCP".to_string(),
                                 version: "1.1.1".to_string(),
-                                description: Some("A Model Context Protocol server for web search using DuckDuckGo, Google Search, and Felo AI".to_string()),
+                                description: Some("A Model Context Protocol server for web search using DuckDuckGo, Google Search, Linkup, and Felo AI".to_string()),
                             },
                             capabilities: ServerCapabilities {
                                 tools: Some(ToolsCapability {
@@ -172,6 +179,11 @@ impl McpServer {
         // Add Google Search tool if configured
         if self.google_config.is_some() {
             tools.push(GOOGLE_SEARCH_TOOL_DEFINITION.clone());
+        }
+
+        // Add Linkup Search tool if configured
+        if self.linkup_api_key.is_some() {
+            tools.push(LINKUP_SEARCH_TOOL_DEFINITION.clone());
         }
 
         // Add Jina Reader tool if configured
@@ -254,6 +266,10 @@ impl McpServer {
                     (None, None)
                 };
                 let tool = GoogleSearchTool::new(api_key, search_engine_id);
+                tool.execute(params.arguments).await
+            }
+            "linkup_search" => {
+                let tool = LinkupSearchTool::new(self.linkup_api_key.clone());
                 tool.execute(params.arguments).await
             }
             "fetch-url" => {
