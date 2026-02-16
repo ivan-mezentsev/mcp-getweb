@@ -11,6 +11,7 @@ A Model Context Protocol (MCP) server that provides web search and content extra
 - [Google API](https://support.google.com/googleapi/answer/6158862?hl=en)
 - [Google Search Engine ID](https://support.google.com/programmable-search/answer/12499034?hl=en)
 - [Jina AI](https://jina.ai)
+- [Linkup API](https://app.linkup.so)
 
 ```json
 {
@@ -24,7 +25,8 @@ A Model Context Protocol (MCP) server that provides web search and content extra
       "env": {
         "GOOGLE_API_KEY": "XXXXXXXXX",
         "GOOGLE_SEARCH_ENGINE_ID": "XXXXXXXXX",
-        "JINA_API_KEY": "jina_XXXXXXXXX"
+        "JINA_API_KEY": "jina_XXXXXXXXX",
+        "LINKUP_API_KEY": "XXXXXXXXX"
       }
     }
   }
@@ -62,7 +64,22 @@ Parameters:
 
 Note: Requires `GOOGLE_API_KEY` and `GOOGLE_SEARCH_ENGINE_ID` to be set.
 
-### 3) Felo AI Search (`felo-search`)
+### 3) Linkup Search (`linkup_search`)
+
+Search the web via Linkup API and return relevant results in Markdown.
+
+Parameters:
+
+- `query` (string, required): Natural-language search query
+- `onlySearchTheseDomains` (array of strings, optional): Restrict results to specific domains
+- `dateFilter` (object, optional): Date range filter
+  - `fromDate` (string, optional): Start date in `YYYY-MM-DD`
+  - `toDate` (string, optional): End date in `YYYY-MM-DD`
+- `maxResults` (integer, optional): Maximum number of results to return (default: 5, min: 1)
+
+Note: Requires `LINKUP_API_KEY` to be set.
+
+### 4) Felo AI Search (`felo-search`)
 
 AI-powered search with contextual responses for up-to-date technical information (releases, advisories, migrations, benchmarks, community insights).
 
@@ -71,7 +88,7 @@ Parameters:
 - `query` (string, required): The search query or prompt
 - `stream` (boolean, optional): Whether to stream the response (default: false)
 
-### 4) URL Content Fetcher (`fetch-url`)
+### 5) URL Content Fetcher (`fetch-url`)
 
 Fetch the clean content of a URL and return it as text.
 
@@ -81,7 +98,7 @@ Parameters:
 - `maxLength` (integer, optional): Maximum content length (default: 30000, min: 1000, max: 500000)
 - `extractMainContent` (boolean, optional): Attempt to extract main content when HTML (default: true)
 
-### 5) URL Metadata Extractor (`url-metadata`)
+### 6) URL Metadata Extractor (`url-metadata`)
 
 Extract metadata (title, description, image, favicon) from a URL.
 
@@ -89,7 +106,7 @@ Parameters:
 
 - `url` (string, required): The URL to extract metadata from
 
-### 6) URL Fetch to Markdown (`url-fetch`)
+### 7) URL Fetch to Markdown (`url-fetch`)
 
 Fetch web pages and convert them to Markdown. Handles HTML, plaintext, and JSON (pretty-printed in a fenced block).
 
@@ -97,7 +114,7 @@ Parameters:
 
 - `url` (string, required): The URL to fetch and convert to Markdown
 
-### 7) Jina Reader (`jina-reader`)
+### 8) Jina Reader (`jina-reader`)
 
 Retrieve LLM-friendly content from a URL using Jina r.reader with optional summaries and formats.
 
@@ -119,6 +136,7 @@ Note: Requires `JINA_API_KEY` to be set.
 - Model Context Protocol specification by Anthropic
 - DuckDuckGo for providing a privacy-focused web search experience
 - Google Programmable Search Engine and Custom Search JSON API
+- Linkup API for high-quality web search results
 - Jina AI r.reader API for high-quality content extraction
 - Felo AI for up-to-date, developer-focused search insights
 - Rust ecosystem and crates that power this server:
