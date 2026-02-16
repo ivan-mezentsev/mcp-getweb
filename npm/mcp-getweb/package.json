@@ -1,7 +1,7 @@
 {
   "name": "mcp-getweb",
   "version": "0.1.0",
-  "description": "Searching: Google (API keys), Felo AI, DuckDuckGo; convert fetched pages to Markdown (LLM‑ready) and fetch ready docs from Jina API.",
+  "description": "Searching: Google (API keys), Felo AI, DuckDuckGo, Linkup; convert fetched pages to Markdown (LLM‑ready) and fetch ready docs from Jina API.",
   "license": "MIT",
   "type": "module",
   "engines": {

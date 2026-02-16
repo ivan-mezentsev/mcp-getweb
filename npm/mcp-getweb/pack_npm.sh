@@ -11,6 +11,8 @@
 #     3) Run `npm pack` inside `npm/mcp-getweb`, produce `mcp-getweb-<version>.tgz`, then rename to `mcp-getweb-npm-<version>.tgz` into `--dir`.
 #     4) Verify tarball content includes JS launcher and all binaries.
 #     5) Run `npm publish [--dry-run] <tarball>` with `CI` removed from env.
+#        In GitHub Actions, this is intended to work with npm Trusted Publishing (OIDC),
+#        so no long-lived npm auth token is required for publish.
 # - Errors: tool missing, download failures, missing expected assets, pack/publish errors.
 #
 # Requirements:

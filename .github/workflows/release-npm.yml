@@ -6,7 +6,8 @@ on:
     types: [completed]
 
 permissions:
-  contents: write
+  contents: read
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
@@ -20,8 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NPM_CONFIG_PROVENANCE: "true"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -31,17 +31,33 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Update npm CLI
+        run: npm install -g npm@latest
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y zstd unzip gh
 
+      - name: Resolve tag from workflow SHA
+        id: resolve_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="${{ github.event.workflow_run.head_sha }}"
+          tag="$(git tag --points-at "$head_sha" | head -n 1 || true)"
+          if [[ -z "$tag" ]]; then
+            echo "Unable to resolve tag for SHA: $head_sha" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Pack and publish
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ github.event.workflow_run.head_branch }}"
+          tag="${{ steps.resolve_tag.outputs.tag }}"
           ./npm/mcp-getweb/pack_npm.sh --repo "${{ github.repository }}" "$tag" --dir ../../dist
