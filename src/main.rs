@@ -82,6 +82,7 @@ async fn main() {
             - duckduckgo-search: Search the web using DuckDuckGo\n\
             - google-search: Search the web using Google\n\
             - linkup_search: Search the web using Linkup API\n\
+            - exa_search: Search the web using Exa API\n\
             - fetch-url: Fetch and extract content from a URL\n\
             - url-metadata: Extract metadata from a URL\n\
             - url-fetch: Fetch web pages and convert them to markdown\n\
@@ -113,6 +114,13 @@ async fn main() {
                 .long("linkup-api-key")
                 .value_name("KEY")
                 .help("Linkup API key")
+                .action(clap::ArgAction::Set),
+        )
+        .arg(
+            Arg::new("exa-api-key")
+                .long("exa-api-key")
+                .value_name("KEY")
+                .help("Exa API key")
                 .action(clap::ArgAction::Set),
         )
         .arg(
@@ -167,6 +175,12 @@ async fn main() {
         .cloned()
         .or_else(|| std::env::var("LINKUP_API_KEY").ok());
 
+    // Get Exa API key from command line or environment
+    let exa_api_key = matches
+        .get_one::<String>("exa-api-key")
+        .cloned()
+        .or_else(|| std::env::var("EXA_API_KEY").ok());
+
     // Log Google Search configuration status (without exposing secrets)
     match (&google_api_key, &google_search_engine_id) {
         (Some(_), Some(_)) => {
@@ -203,6 +217,16 @@ async fn main() {
         }
     }
 
+    // Log Exa configuration status (without exposing secrets)
+    match &exa_api_key {
+        Some(_) => {
+            info!("Exa Search tool enabled");
+        }
+        None => {
+            info!("Exa API key not found - Exa Search tool will be disabled");
+        }
+    }
+
     let google_config =
         if let (Some(api_key), Some(engine_id)) = (google_api_key, google_search_engine_id) {
             Some(GoogleSearchConfig {
@@ -229,7 +253,7 @@ async fn main() {
     // Start the MCP server
     info!("Starting MCP server...");
 
-    let mut server = McpServer::new(google_config, jina_api_key, linkup_api_key);
+    let mut server = McpServer::new(google_config, jina_api_key, linkup_api_key, exa_api_key);
     if let Err(e) = server.start().await {
         error!("Failed to start server: {}", e);
         process::exit(1);

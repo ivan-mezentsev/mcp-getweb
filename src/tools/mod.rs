@@ -1,4 +1,5 @@
 pub mod duckduckgo_search_tool;
+pub mod exa_search_tool;
 pub mod felo_tool;
 pub mod fetch_url_tool;
 pub mod google_search_tool;
