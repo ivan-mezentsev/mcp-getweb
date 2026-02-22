@@ -5,6 +5,7 @@ use super::transport::StdioTransport;
 use super::types::*;
 use crate::tools::{
     duckduckgo_search_tool::{DuckDuckGoSearchTool, DUCKDUCKGO_SEARCH_TOOL_DEFINITION},
+    exa_search_tool::{ExaSearchTool, EXA_SEARCH_TOOL_DEFINITION},
     felo_tool::{FeloTool, FELO_TOOL_DEFINITION},
     fetch_url_tool::{FetchUrlTool, FETCH_URL_TOOL_DEFINITION},
     google_search_tool::{GoogleSearchTool, GOOGLE_SEARCH_TOOL_DEFINITION},
@@ -25,6 +26,7 @@ pub struct McpServer {
     google_config: Option<GoogleSearchConfig>,
     jina_api_key: Option<String>,
     linkup_api_key: Option<String>,
+    exa_api_key: Option<String>,
     initialized: bool,
 }
 
@@ -33,6 +35,7 @@ impl McpServer {
         google_config: Option<GoogleSearchConfig>,
         jina_api_key: Option<String>,
         linkup_api_key: Option<String>,
+        exa_api_key: Option<String>,
     ) -> Self {
         Self {
             transport: StdioTransport::new(),
@@ -40,6 +43,7 @@ impl McpServer {
             google_config,
             jina_api_key,
             linkup_api_key,
+            exa_api_key,
         }
     }
 
@@ -124,9 +128,9 @@ impl McpServer {
                     let result = InitializeResult {
                             protocol_version: "2024-11-05".to_string(),
                             server_info: ServerInfo {
-                                name: "DuckDuckGo, Google Search, Linkup & Felo AI Search MCP".to_string(),
+                                name: "DuckDuckGo, Google Search, Linkup, Exa & Felo AI Search MCP".to_string(),
                                 version: "1.1.1".to_string(),
-                                description: Some("A Model Context Protocol server for web search using DuckDuckGo, Google Search, Linkup, and Felo AI".to_string()),
+                                description: Some("A Model Context Protocol server for web search using DuckDuckGo, Google Search, Linkup, Exa, and Felo AI".to_string()),
                             },
                             capabilities: ServerCapabilities {
                                 tools: Some(ToolsCapability {
@@ -184,6 +188,11 @@ impl McpServer {
         // Add Linkup Search tool if configured
         if self.linkup_api_key.is_some() {
             tools.push(LINKUP_SEARCH_TOOL_DEFINITION.clone());
+        }
+
+        // Add Exa Search tool if configured
+        if self.exa_api_key.is_some() {
+            tools.push(EXA_SEARCH_TOOL_DEFINITION.clone());
         }
 
         // Add Jina Reader tool if configured
@@ -270,6 +279,10 @@ impl McpServer {
             }
             "linkup_search" => {
                 let tool = LinkupSearchTool::new(self.linkup_api_key.clone());
+                tool.execute(params.arguments).await
+            }
+            "exa_search" => {
+                let tool = ExaSearchTool::new(self.exa_api_key.clone());
                 tool.execute(params.arguments).await
             }
             "fetch-url" => {

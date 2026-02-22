@@ -12,6 +12,7 @@ A Model Context Protocol (MCP) server that provides web search and content extra
 - [Google Search Engine ID](https://support.google.com/programmable-search/answer/12499034?hl=en)
 - [Jina AI](https://jina.ai)
 - [Linkup API](https://app.linkup.so)
+- [Exa API](https://docs.exa.ai)
 
 ```json
 {
@@ -26,7 +27,8 @@ A Model Context Protocol (MCP) server that provides web search and content extra
         "GOOGLE_API_KEY": "XXXXXXXXX",
         "GOOGLE_SEARCH_ENGINE_ID": "XXXXXXXXX",
         "JINA_API_KEY": "jina_XXXXXXXXX",
-        "LINKUP_API_KEY": "XXXXXXXXX"
+        "LINKUP_API_KEY": "XXXXXXXXX",
+        "EXA_API_KEY": "XXXXXXXXX"
       }
     }
   }
@@ -79,7 +81,28 @@ Parameters:
 
 Note: Requires `LINKUP_API_KEY` to be set.
 
-### 4) Felo AI Search (`felo-search`)
+### 4) Exa Search (`exa_search`)
+
+Search the web via Exa API and return relevant results in Markdown.
+
+Parameters:
+
+- `query` (string, required): Natural-language search query
+- `maxResults` (integer, optional): Number of results to return (default: 10, max: 25)
+- `publishedDateRange` (object, optional): Published date range filter
+  - `fromDate` (string, optional): Start date, RFC3339 (e.g., `2024-02-09T00:00:00.000Z`) or `YYYY-MM-DD`
+  - `toDate` (string, optional): End date, RFC3339 (e.g., `2024-02-09T00:00:00.000Z`) or `YYYY-MM-DD`
+- `crawlDateRange` (object, optional): Crawl date range filter
+  - `fromDate` (string, optional): Start date, RFC3339 or `YYYY-MM-DD`
+  - `toDate` (string, optional): End date, RFC3339 or `YYYY-MM-DD`
+- `userLocation` (string, optional): Two-letter ISO country code (e.g., `US`)
+- `includeText` (string, optional): Exact phrase that must appear in the webpage text (max 5 words)
+- `excludeText` (string, optional): Exact phrase that must not appear in the webpage text (max 5 words)
+- `domain` (string, optional): Restrict results to a single domain (e.g., `arxiv.org`)
+
+Note: Requires `EXA_API_KEY` to be set.
+
+### 5) Felo AI Search (`felo-search`)
 
 AI-powered search with contextual responses for up-to-date technical information (releases, advisories, migrations, benchmarks, community insights).
 
@@ -88,7 +111,7 @@ Parameters:
 - `query` (string, required): The search query or prompt
 - `stream` (boolean, optional): Whether to stream the response (default: false)
 
-### 5) URL Content Fetcher (`fetch-url`)
+### 6) URL Content Fetcher (`fetch-url`)
 
 Fetch the clean content of a URL and return it as text.
 
@@ -98,7 +121,7 @@ Parameters:
 - `maxLength` (integer, optional): Maximum content length (default: 30000, min: 1000, max: 500000)
 - `extractMainContent` (boolean, optional): Attempt to extract main content when HTML (default: true)
 
-### 6) URL Metadata Extractor (`url-metadata`)
+### 7) URL Metadata Extractor (`url-metadata`)
 
 Extract metadata (title, description, image, favicon) from a URL.
 
@@ -106,7 +129,7 @@ Parameters:
 
 - `url` (string, required): The URL to extract metadata from
 
-### 7) URL Fetch to Markdown (`url-fetch`)
+### 8) URL Fetch to Markdown (`url-fetch`)
 
 Fetch web pages and convert them to Markdown. Handles HTML, plaintext, and JSON (pretty-printed in a fenced block).
 
@@ -114,7 +137,7 @@ Parameters:
 
 - `url` (string, required): The URL to fetch and convert to Markdown
 
-### 8) Jina Reader (`jina-reader`)
+### 9) Jina Reader (`jina-reader`)
 
 Retrieve LLM-friendly content from a URL using Jina r.reader with optional summaries and formats.
 
@@ -137,6 +160,7 @@ Note: Requires `JINA_API_KEY` to be set.
 - DuckDuckGo for providing a privacy-focused web search experience
 - Google Programmable Search Engine and Custom Search JSON API
 - Linkup API for high-quality web search results
+- Exa API for fast neural web search
 - Jina AI r.reader API for high-quality content extraction
 - Felo AI for up-to-date, developer-focused search insights
 - Rust ecosystem and crates that power this server:
