@@ -74,7 +74,7 @@ fn strip_ansi_codes(text: &str) -> String {
 async fn main() {
     // Parse command line arguments first
     let matches = Command::new("mcp-getweb")
-        .version("1.6.0")
+        .version("1.7.0")
         .about("A Model Context Protocol server for web search")
         .author("Ivan Mezentsev")
         .long_about(
